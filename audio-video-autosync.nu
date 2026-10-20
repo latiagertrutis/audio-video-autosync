@@ -88,7 +88,12 @@ def main [
 
         print $"  Matching ($video_name) against external recordings..."
 
-        let best = ($audio_files | each {|wav|
+        mut best = { wav: "", offset: 0.0, score: 0.0 }
+        mut found = false
+
+        for wav in $audio_files {
+            if $found { break }
+
             let wav_name = ($wav | path basename)
 
             # Build the audio-offset-finder command arguments
@@ -108,26 +113,23 @@ def main [
             }
 
             if ($result != null) {
-                let offset = ($result | get offset)
+                let offset = ($result | get time_offset)
                 let std_score = ($result | get standard_score)
                 print $"    → offset=($offset)s  score=($std_score)"
 
-                { wav: $wav, offset: $offset, score: $std_score }
-            } else {
-                null
+                if $std_score >= $score_threshold {
+                    $best = { wav: $wav, offset: $offset, score: $std_score }
+                    $found = true
+                }
             }
-        } | compact          # remove nulls
-          | where score >= $score_threshold
-          | sort-by score --reverse
-          | first 1)         # take best match only (returns a list)
+        }
 
-        if ($best | is-empty) {
+        if (not $found) {
             print $"  ✗ No match found for ($video_name)"
             null
         } else {
-            let m = ($best | first)
-            print $"  ✓ ($video_name) ↔ ($m.wav | path basename)  offset=($m.offset)s  score=($m.score)"
-            { video: $video, wav: $m.wav, offset: $m.offset, score: $m.score }
+            print $"  ✓ ($video_name) ↔ ($best.wav | path basename)  offset=($best.offset)s  score=($best.score)"
+            { video: $video, wav: $best.wav, offset: $best.offset, score: $best.score }
         }
     } | compact)  # remove nulls from unmatched videos
 
